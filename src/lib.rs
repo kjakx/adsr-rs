@@ -85,8 +85,8 @@ impl ADSR {
     }
 
     fn retrigger(&mut self) {
-        self.note_on_duration  = 0.0;
-        self.note_off_duration = 0.0;
+        self.note_on_duration  = -1.0;
+        self.note_off_duration = -1.0;
     }
 
     pub fn next(&mut self, next_event: ADSREvent) -> f32 {
@@ -113,19 +113,23 @@ impl ADSR {
         self.current_phase = self.next_phase(next_event);
         self.current_val = match self.current_phase {
             ADSRPhase::Attack => {
-                let t = self.note_on_duration / self.sample_rate / self.param.a;
-                1.0 - (-5.0 * t).exp()
+                let t = self.note_on_duration / self.sample_rate;
+                if self.param.d > 0.0 {
+                    1.0 / self.param.a * t
+                } else {
+                    self.param.s / self.param.a * t
+                }
             },
             ADSRPhase::Decay => {
-                let t = (self.note_on_duration / self.sample_rate - self.param.a) / self.param.d;
-                self.param.s + (1.0 - self.param.s) * (-5.0 * t).exp()
+                let t = self.note_on_duration / self.sample_rate- self.param.a;
+                1.0 - (1.0 - self.param.s) / self.param.d * t
             },
             ADSRPhase::Sustain => {
                 self.param.s
             },
             ADSRPhase::Release => {
                 let t = self.note_off_duration / self.sample_rate / self.param.r;
-                self.last_gate_val * (-5.0 * t).exp()
+                self.last_gate_val - self.last_gate_val * t
             },
             ADSRPhase::Silence => {
                 0.0
@@ -145,7 +149,7 @@ mod tests {
 
     fn create_chart(filename: &str, cap: &str, adsr: &mut ADSR, t_sec: f32, events: &mut VecDeque<(f32, ADSREvent)>) {
         let data_len: usize = (adsr.sample_rate * t_sec) as usize;
-        let adsr_vec: Vec<f32> = (0..data_len).map(|i| {
+        let adsr_vec: Vec<f32> = (0..=data_len).map(|i| {
             let next_event = if events.is_empty() {
                 adsr.current_event
             } else if events[events.len() - 1].0 > i as f32 / adsr.sample_rate {
@@ -177,7 +181,7 @@ mod tests {
 
         chart.draw_series(
             AreaSeries::new(
-                (0..data_len).zip(adsr_vec.iter()).map(|(x, y)| ((x as f32 / adsr.sample_rate, *y))),
+                (0..=data_len).zip(adsr_vec.iter()).map(|(x, y)| ((x as f32 / adsr.sample_rate, *y))),
                 0.0,
                 &RED.mix(0.2),
             )
@@ -210,5 +214,14 @@ mod tests {
         event_queue.push_front((1.0, NoteOff));
         let mut adsr = ADSR::new(0.2, 0.2, 0.8, 1.0, 100.0);
         create_chart("chart/typical.png", "typical", &mut adsr, 2.0, &mut event_queue);
+    }
+
+    #[test]
+    fn fade_in_out() {
+        let mut event_queue = VecDeque::new();
+        event_queue.push_front((0.0, NoteOn));
+        event_queue.push_front((1.5, NoteOff));
+        let mut adsr = ADSR::new(0.5, 0.0, 0.8, 0.5, 100.0);
+        create_chart("chart/fade_in_out.png", "fade_in_out", &mut adsr, 2.0, &mut event_queue);
     }
 }
