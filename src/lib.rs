@@ -124,7 +124,7 @@ impl ADSR {
                 self.param.s
             },
             ADSRPhase::Release => {
-                let t = (self.note_off_duration + 1.0) / self.sample_rate / self.param.r;
+                let t = self.note_off_duration / self.sample_rate / self.param.r;
                 self.last_gate_val * (-5.0 * t).exp()
             },
             ADSRPhase::Silence => {
