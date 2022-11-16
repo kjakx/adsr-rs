@@ -44,9 +44,9 @@ pub struct ADSR {
 }
 
 impl ADSR {
-    pub fn new(sample_rate: f32) -> Self {
+    pub fn new(a: f32, d: f32, s: f32, r: f32, sample_rate: f32) -> Self {
         ADSR {
-            param: ADSRParam::new(0.0, 0.0, 1.0, 0.0),
+            param: ADSRParam::new(a, d, s, r),
             note_on_duration: 0.0,
             note_off_duration: 0.0,
             current_val: 0.0,
