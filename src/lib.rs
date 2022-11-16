@@ -139,10 +139,76 @@ impl ADSR {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use plotters::prelude::*;
+    use ADSREvent::*;
+    use std::collections::VecDeque;
+
+    fn create_chart(filename: &str, cap: &str, adsr: &mut ADSR, t_sec: f32, events: &mut VecDeque<(f32, ADSREvent)>) {
+        let data_len: usize = (adsr.sample_rate * t_sec) as usize;
+        let adsr_vec: Vec<f32> = (0..data_len).map(|i| {
+            let next_event = if events.is_empty() {
+                adsr.current_event
+            } else if events[events.len() - 1].0 > i as f32 / adsr.sample_rate {
+                adsr.current_event
+            } else {
+                let e = events.pop_back().unwrap();
+                e.1
+            };
+            adsr.next(next_event)
+        }).collect();
+
+        let root = BitMapBackend::new(filename, (1024, 768)).into_drawing_area();
+
+        root.fill(&WHITE).unwrap();
+
+        let mut chart = ChartBuilder::on(&root)
+            .set_label_area_size(LabelAreaPosition::Left, 60)
+            .set_label_area_size(LabelAreaPosition::Bottom, 60)
+            .caption(cap, ("sans-serif", 40))
+            .build_cartesian_2d(-0.5_f32..t_sec+1.0, -0.1_f32..1.1_f32)
+            .unwrap();
+
+        chart
+            .configure_mesh()
+            //.disable_x_mesh()
+            //.disable_y_mesh()
+            .draw()
+            .unwrap();
+
+        chart.draw_series(
+            AreaSeries::new(
+                (0..data_len).zip(adsr_vec.iter()).map(|(x, y)| ((x as f32 / adsr.sample_rate, *y))),
+                0.0,
+                &RED.mix(0.2),
+            )
+            .border_style(&RED),
+        ).unwrap();
+
+        // To avoid the IO failure being ignored silently, we manually call the present function
+        root.present().unwrap();
+    }
 
     #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
+    fn silence() {
+        let mut event_queue: VecDeque<(f32, ADSREvent)> = VecDeque::new();
+        let mut adsr = ADSR::new(0.1, 0.1, 0.1, 0.1, 100.0);
+        create_chart("chart/silence.png", "silence", &mut adsr, 2.0, &mut event_queue)
+    }
+
+    #[test]
+    fn just_sustain() {
+        let mut event_queue = VecDeque::new();
+        event_queue.push_front((0.0, NoteOn));
+        let mut adsr = ADSR::new(0.0, 0.0, 1.0, 0.0, 100.0);
+        create_chart("chart/just_sustain.png", "just_sustain", &mut adsr, 2.0, &mut event_queue);
+    }
+
+    #[test]
+    fn typical() {
+        let mut event_queue = VecDeque::new();
+        event_queue.push_front((0.0, NoteOn));
+        event_queue.push_front((1.0, NoteOff));
+        let mut adsr = ADSR::new(0.2, 0.2, 0.8, 1.0, 100.0);
+        create_chart("chart/typical.png", "typical", &mut adsr, 2.0, &mut event_queue);
     }
 }
