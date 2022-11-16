@@ -61,6 +61,41 @@ impl ADSR {
         self.param = ADSRParam::new(a, d, s, r);
     }
 
+    pub fn generate(&mut self, next_event: ADSREvent) -> f32 {
+        let next_val = match next_event {
+            ADSREvent::NoteOn => {
+                if self.current_event == ADSREvent::NoteOff {
+                    self.retrigger();
+                }
+                let next_val = self.next_val(self.next_phase(next_event));
+                if self.current_phase != ADSRPhase::Sustain {
+                    self.note_on_duration += 1.0;
+                }
+                next_val
+            },
+            ADSREvent::NoteOff => {
+                if self.current_event == ADSREvent::NoteOn {
+                    self.last_gate_val = self.current_val; // remember last sample value before note off
+                }
+                let next_val = self.next_val(self.next_phase(next_event));
+                if self.current_phase != ADSRPhase::Silence {
+                    self.note_off_duration += 1.0;
+                }
+                next_val
+            }
+        };
+
+        self.current_event = next_event;
+        self.current_phase = self.next_phase(next_event);
+        self.current_val   = next_val;
+        next_val
+    }
+
+    fn retrigger(&mut self) {
+        self.note_on_duration  = 0.0;
+        self.note_off_duration = 0.0;
+    }
+
     fn next_phase(&self, next_event: ADSREvent) -> ADSRPhase {
         match next_event {
             ADSREvent::NoteOn => {
@@ -84,34 +119,8 @@ impl ADSR {
         }
     }
 
-    fn retrigger(&mut self) {
-        self.note_on_duration  = -1.0;
-        self.note_off_duration = -1.0;
-    }
-
-    pub fn next(&mut self, next_event: ADSREvent) -> f32 {
-        match next_event {
-            ADSREvent::NoteOn => {
-                if self.current_event == ADSREvent::NoteOff {
-                    self.retrigger();
-                }
-                if self.current_phase != ADSRPhase::Sustain {
-                    self.note_on_duration += 1.0;
-                }
-            },
-            ADSREvent::NoteOff => {
-                if self.current_event == ADSREvent::NoteOn {
-                    self.last_gate_val = self.current_val; // remember last sample value before note off
-                }
-                if self.current_phase != ADSRPhase::Silence { // prevents incrementing note_off_duration infinitely
-                    self.note_off_duration += 1.0;
-                }
-            }
-        }
-        
-        self.current_event = next_event;
-        self.current_phase = self.next_phase(next_event);
-        self.current_val = match self.current_phase {
+    fn next_val(&self, next_phase: ADSRPhase) -> f32 {
+        match next_phase {
             ADSRPhase::Attack => {
                 let t = self.note_on_duration / self.sample_rate;
                 if self.param.d > 0.0 {
@@ -121,7 +130,7 @@ impl ADSR {
                 }
             },
             ADSRPhase::Decay => {
-                let t = self.note_on_duration / self.sample_rate- self.param.a;
+                let t = self.note_on_duration / self.sample_rate - self.param.a;
                 1.0 - (1.0 - self.param.s) / self.param.d * t
             },
             ADSRPhase::Sustain => {
@@ -134,9 +143,7 @@ impl ADSR {
             ADSRPhase::Silence => {
                 0.0
             }
-        };
-
-        self.current_val
+        }
     }
 }
 
@@ -158,7 +165,7 @@ mod tests {
                 let e = events.pop_back().unwrap();
                 e.1
             };
-            adsr.next(next_event)
+            adsr.generate(next_event)
         }).collect();
 
         let root = BitMapBackend::new(filename, (1024, 768)).into_drawing_area();
