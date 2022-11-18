@@ -1,3 +1,5 @@
+use dasp_signal::Signal;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum ADSREvent {
     NoteOn,
@@ -13,82 +15,153 @@ pub enum ADSRPhase {
     Silence,
 }
 
-#[derive(Clone)]
-pub struct ADSRParam {
-    a: f32,
-    d: f32,
-    s: f32,
-    r: f32,
+#[derive(Copy, Clone, PartialEq)]
+pub enum ADSRParamKind {
+    AttackTime(f32),
+    AttackCurve(f32),
+    DecayTime(f32),
+    DecayCurve(f32),
+    SustainLevel(f32),
+    ReleaseTime(f32),
+    ReleaseCurve(f32)
 }
 
-impl ADSRParam {
-    pub fn new(a: f32, d: f32, s: f32, r: f32) -> Self {
-        ADSRParam {
-            a,
-            d,
-            s,
-            r
+impl ADSRParamKind {
+    pub fn as_val(&self) -> f32 {
+        match self {
+            ADSRParamKind::AttackTime(val) => {
+                *val
+            },
+            ADSRParamKind::DecayTime(val) => {
+                *val
+            },
+            ADSRParamKind::SustainLevel(val) => {
+                *val
+            },
+            ADSRParamKind::ReleaseTime(val) => {
+                *val
+            },
+            _ => {
+                unimplemented!();
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ADSRParams {
+    attack_time   : ADSRParamKind,
+    decay_time    : ADSRParamKind,
+    sustain_level : ADSRParamKind,
+    release_time  : ADSRParamKind,
+}
+
+impl ADSRParams {
+    pub fn new(attack_time: f32, decay_time: f32, sustain_level: f32, release_time: f32) -> Self {
+        if attack_time < 0.0 || decay_time < 0.0 || sustain_level < 0.0 || release_time < 0.0 {
+            panic!("invalid parameter value");
+        }
+        ADSRParams {
+            attack_time   : ADSRParamKind::AttackTime(attack_time),
+            decay_time    : ADSRParamKind::DecayTime(decay_time),
+            sustain_level : ADSRParamKind::SustainLevel(sustain_level),
+            release_time  : ADSRParamKind::ReleaseTime(release_time),
+        }
+    }
+
+    pub fn set_param(&mut self, kind: ADSRParamKind) {
+        match kind {
+            ADSRParamKind::AttackTime(t) if t >= 0.0 => {
+                self.attack_time = ADSRParamKind::AttackTime(t);
+            },
+            ADSRParamKind::DecayTime(t) if t >= 0.0 => {
+                self.decay_time = ADSRParamKind::DecayTime(t);
+            },
+            ADSRParamKind::SustainLevel(l) if l >= 0.0 => {
+                self.sustain_level = ADSRParamKind::SustainLevel(l);
+            },
+            ADSRParamKind::ReleaseTime(t) if t >= 0.0 => {
+                self.release_time = ADSRParamKind::ReleaseTime(t);
+            },
+            _ => {
+                unimplemented!();
+            }
         }
     }
 }
 
 pub struct ADSR {
-    param: ADSRParam,
+    params: ADSRParams,
     note_on_duration: f32,
     note_off_duration: f32,
-    current_val: f32,
     last_gate_val: f32,
-    current_phase: ADSRPhase,
     current_event: ADSREvent,
+    current_phase: ADSRPhase,
+    current_val: f32,
+    next_event: ADSREvent,
     sample_rate: f32,
 }
 
 impl ADSR {
     pub fn new(a: f32, d: f32, s: f32, r: f32, sample_rate: f32) -> Self {
         ADSR {
-            param: ADSRParam::new(a, d, s, r),
+            params: ADSRParams::new(a, d, s, r),
             note_on_duration: 0.0,
             note_off_duration: 0.0,
-            current_val: 0.0,
             last_gate_val: 0.0,
-            current_phase: ADSRPhase::Silence,
             current_event: ADSREvent::NoteOff,
+            current_phase: ADSRPhase::Silence,
+            current_val: 0.0,
+            next_event: ADSREvent::NoteOff,
             sample_rate,
         }
     }
 
-    pub fn set_param(&mut self, a: f32, d: f32, s: f32, r: f32) {
-        self.param = ADSRParam::new(a, d, s, r);
+    pub fn set_adsr_param(&mut self, kind: ADSRParamKind) {
+        self.params.set_param(kind);
     }
 
-    pub fn generate(&mut self, next_event: ADSREvent) -> f32 {
-        let next_val = match next_event {
+    pub fn set_next_event(&mut self, event: ADSREvent) {
+        self.next_event = event;
+    }
+
+    pub fn generate(&mut self) -> f32 {
+        match self.next_event {
             ADSREvent::NoteOn => {
                 if self.current_event == ADSREvent::NoteOff {
                     self.retrigger();
                 }
-                let next_val = self.next_val(self.next_phase(next_event));
+
+                let next_phase = self.next_phase(self.next_event);
+                let next_val = self.next_val(next_phase);
+
                 if self.current_phase != ADSRPhase::Sustain {
                     self.note_on_duration += 1.0;
                 }
+
+                self.current_event = self.next_event;
+                self.current_phase = next_phase;
+                self.current_val   = next_val;
                 next_val
             },
             ADSREvent::NoteOff => {
                 if self.current_event == ADSREvent::NoteOn {
                     self.last_gate_val = self.current_val; // remember last sample value before note off
                 }
-                let next_val = self.next_val(self.next_phase(next_event));
+
+                let next_phase = self.next_phase(self.next_event);
+                let next_val = self.next_val(next_phase);
+
                 if self.current_phase != ADSRPhase::Silence {
                     self.note_off_duration += 1.0;
                 }
+
+                self.current_event = self.next_event;
+                self.current_phase = next_phase;
+                self.current_val   = next_val;
                 next_val
             }
-        };
-
-        self.current_event = next_event;
-        self.current_phase = self.next_phase(next_event);
-        self.current_val   = next_val;
-        next_val
+        }
     }
 
     fn retrigger(&mut self) {
@@ -100,9 +173,9 @@ impl ADSR {
         match next_event {
             ADSREvent::NoteOn => {
                 let t = self.note_on_duration / self.sample_rate;
-                if t < self.param.a {
+                if t < self.params.attack_time.as_val() {
                     ADSRPhase::Attack
-                } else if self.param.a <= t && t < self.param.a + self.param.d {
+                } else if self.params.attack_time.as_val() <= t && t < self.params.attack_time.as_val() + self.params.decay_time.as_val() {
                     ADSRPhase::Decay
                 } else { // if self.a + self.d < t {
                     ADSRPhase::Sustain
@@ -110,7 +183,7 @@ impl ADSR {
             },
             ADSREvent::NoteOff => {
                 let t = self.note_off_duration / self.sample_rate;
-                if t < self.param.r {
+                if t < self.params.release_time.as_val() {
                     ADSRPhase::Release
                 } else {
                     ADSRPhase::Silence
@@ -123,27 +196,35 @@ impl ADSR {
         match next_phase {
             ADSRPhase::Attack => {
                 let t = self.note_on_duration / self.sample_rate;
-                if self.param.d > 0.0 {
-                    1.0 / self.param.a * t
+                if self.params.decay_time.as_val() > 0.0 {
+                    1.0 / self.params.attack_time.as_val() * t
                 } else {
-                    self.param.s / self.param.a * t
+                    self.params.sustain_level.as_val() / self.params.attack_time.as_val() * t
                 }
             },
             ADSRPhase::Decay => {
-                let t = self.note_on_duration / self.sample_rate - self.param.a;
-                1.0 - (1.0 - self.param.s) / self.param.d * t
+                let t = self.note_on_duration / self.sample_rate - self.params.attack_time.as_val();
+                1.0 - (1.0 - self.params.sustain_level.as_val()) / self.params.decay_time.as_val() * t
             },
             ADSRPhase::Sustain => {
-                self.param.s
+                self.params.sustain_level.as_val()
             },
             ADSRPhase::Release => {
-                let t = self.note_off_duration / self.sample_rate / self.param.r;
-                self.last_gate_val - self.last_gate_val * t
+                let t = self.note_off_duration / self.sample_rate;
+                self.last_gate_val - self.last_gate_val / self.params.release_time.as_val() * t
             },
             ADSRPhase::Silence => {
                 0.0
             }
         }
+    }
+}
+
+impl Signal for ADSR {
+    type Frame = f32;
+
+    fn next(&mut self) -> Self::Frame {
+        self.generate()
     }
 }
 
@@ -157,15 +238,11 @@ mod tests {
     fn create_chart(filename: &str, cap: &str, adsr: &mut ADSR, t_sec: f32, events: &mut VecDeque<(f32, ADSREvent)>) {
         let data_len: usize = (adsr.sample_rate * t_sec) as usize;
         let adsr_vec: Vec<f32> = (0..=data_len).map(|i| {
-            let next_event = if events.is_empty() {
-                adsr.current_event
-            } else if events[events.len() - 1].0 > i as f32 / adsr.sample_rate {
-                adsr.current_event
-            } else {
+            if !events.is_empty() && events[events.len() - 1].0 <= i as f32 / adsr.sample_rate {
                 let e = events.pop_back().unwrap();
-                e.1
+                adsr.set_next_event(e.1);
             };
-            adsr.generate(next_event)
+            adsr.next()
         }).collect();
 
         let root = BitMapBackend::new(filename, (1024, 768)).into_drawing_area();
@@ -204,6 +281,14 @@ mod tests {
         let mut event_queue: VecDeque<(f32, ADSREvent)> = VecDeque::new();
         let mut adsr = ADSR::new(0.1, 0.1, 0.1, 0.1, 100.0);
         create_chart("chart/silence.png", "silence", &mut adsr, 2.0, &mut event_queue)
+    }
+
+    #[test]
+    fn silence_although_note_on() {
+        let mut event_queue = VecDeque::new();
+        event_queue.push_front((0.1, NoteOn));
+        let mut adsr = ADSR::new(0.0, 0.0, 0.0, 0.0, 100.0);
+        create_chart("chart/silence_although_note_on.png", "silence_although_note_on", &mut adsr, 2.0, &mut event_queue);
     }
 
     #[test]
