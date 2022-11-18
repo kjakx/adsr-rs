@@ -18,12 +18,12 @@ pub enum ADSRPhase {
 #[derive(Copy, Clone, PartialEq)]
 pub enum ADSRParamKind {
     AttackTime(f32),
-    AttackCurve(f32),
     DecayTime(f32),
-    DecayCurve(f32),
     SustainLevel(f32),
     ReleaseTime(f32),
-    ReleaseCurve(f32)
+    AttackCurve(f32),
+    DecayCurve(f32),
+    ReleaseCurve(f32),
 }
 
 impl ADSRParamKind {
@@ -41,9 +41,15 @@ impl ADSRParamKind {
             ADSRParamKind::ReleaseTime(val) => {
                 *val
             },
-            _ => {
-                unimplemented!();
-            }
+            ADSRParamKind::AttackCurve(val) => {
+                *val
+            },
+            ADSRParamKind::DecayCurve(val) => {
+                *val
+            },
+            ADSRParamKind::ReleaseCurve(val) => {
+                *val
+            },
         }
     }
 }
@@ -54,18 +60,32 @@ pub struct ADSRParams {
     decay_time    : ADSRParamKind,
     sustain_level : ADSRParamKind,
     release_time  : ADSRParamKind,
+    attack_curve  : ADSRParamKind,
+    decay_curve   : ADSRParamKind,
+    release_curve : ADSRParamKind,
 }
 
 impl ADSRParams {
-    pub fn new(attack_time: f32, decay_time: f32, sustain_level: f32, release_time: f32) -> Self {
-        if attack_time < 0.0 || decay_time < 0.0 || sustain_level < 0.0 || release_time < 0.0 {
-            panic!("invalid parameter value");
-        }
+    pub fn new(
+        attack_time: f32, decay_time: f32, sustain_level: f32, release_time: f32,
+        attack_curve: f32, decay_curve: f32, release_curve: f32
+    ) -> Self {
+        assert!(attack_time >= 0.0);
+        assert!(decay_time >= 0.0);
+        assert!(sustain_level >= 0.0 && sustain_level <= 1.0);
+        assert!(release_time >= 0.0);
+        assert!(attack_curve >= -1.0 && attack_curve <= 1.0);
+        assert!(decay_curve >= -1.0 && decay_curve <= 1.0); 
+        assert!(release_curve >= -1.0 && release_curve <= 1.0); 
+
         ADSRParams {
             attack_time   : ADSRParamKind::AttackTime(attack_time),
+            attack_curve  : ADSRParamKind::AttackCurve(attack_curve)
             decay_time    : ADSRParamKind::DecayTime(decay_time),
+            decay_curve   : ADSRParamKind::DecayCurve(decay_curve),
             sustain_level : ADSRParamKind::SustainLevel(sustain_level),
             release_time  : ADSRParamKind::ReleaseTime(release_time),
+            release_curve : ADSRParamKind::ReleaseCurve(release_curve),
         }
     }
 
@@ -77,15 +97,21 @@ impl ADSRParams {
             ADSRParamKind::DecayTime(t) if t >= 0.0 => {
                 self.decay_time = ADSRParamKind::DecayTime(t);
             },
-            ADSRParamKind::SustainLevel(l) if l >= 0.0 => {
+            ADSRParamKind::SustainLevel(l) if l >= 0.0 && l <= 1.0 => {
                 self.sustain_level = ADSRParamKind::SustainLevel(l);
             },
             ADSRParamKind::ReleaseTime(t) if t >= 0.0 => {
                 self.release_time = ADSRParamKind::ReleaseTime(t);
             },
-            _ => {
-                unimplemented!();
-            }
+            ADSRParamKind::AttackCurve(c) if c >= -1.0 && c <= 1.0 => {
+                self.attack_time = ADSRParamKind::AttackCurve(c);
+            },
+            ADSRParamKind::DecayCurve(c) if c >= -1.0 && c <= 1.0 => {
+                self.decay_time = ADSRParamKind::DecayCurve(t);
+            },
+            ADSRParamKind::ReleaseCurve(c) if c >= -1.0 && c <= 1.0 => {
+                self.release_time = ADSRParamKind::ReleaseCurve(t);
+            },
         }
     }
 }
@@ -105,7 +131,7 @@ pub struct ADSR {
 impl ADSR {
     pub fn new(a: f32, d: f32, s: f32, r: f32, sample_rate: f32) -> Self {
         ADSR {
-            params: ADSRParams::new(a, d, s, r),
+            params: ADSRParams::new(a, d, s, r, 0.0, 0.0, 0.0),
             note_on_duration: 0.0,
             note_off_duration: 0.0,
             last_gate_val: 0.0,
@@ -197,25 +223,39 @@ impl ADSR {
             ADSRPhase::Attack => {
                 let t = self.note_on_duration / self.sample_rate;
                 if self.params.decay_time.as_val() > 0.0 {
-                    1.0 / self.params.attack_time.as_val() * t
+                    self.curve_function(t, 1.0, self.params.attack_time.as_val(), self.params.attack_curve.as_val())
                 } else {
-                    self.params.sustain_level.as_val() / self.params.attack_time.as_val() * t
+                    self.curve_function(t, self.params.sustain_level.as_val(), self.params.attack_time.as_val(), self.params.attack_curve.as_val())
                 }
             },
             ADSRPhase::Decay => {
                 let t = self.note_on_duration / self.sample_rate - self.params.attack_time.as_val();
-                1.0 - (1.0 - self.params.sustain_level.as_val()) / self.params.decay_time.as_val() * t
+                self.curve_function(self.params.decay_time.as_val() - t, 1.0 - self.params.sustain_level.as_val(), self.params.decay_time.as_val(), self.params.decay_curve.as_val())
             },
             ADSRPhase::Sustain => {
                 self.params.sustain_level.as_val()
             },
             ADSRPhase::Release => {
                 let t = self.note_off_duration / self.sample_rate;
-                self.last_gate_val - self.last_gate_val / self.params.release_time.as_val() * t
+                self.curve_function(self.params.release_time.as_val() - t, self.last_gate_val, self.params.release_time.as_val(), self.params.release_curve.as_val())
             },
             ADSRPhase::Silence => {
                 0.0
             }
+        }
+    }
+
+    // exponential curve that passes (0, 0) and (w, h)
+    fn curve_function(x: f32, h: f32, w: f32, curve_factor: f32) -> f32 {
+        assert!(x >= 0.0);
+        assert!(h >= 0.0);
+        assert!(w > 0.0);
+        assert!(curve_factor >= -1.0 && curve_factor <= 1.0);
+        if curve_factor == 0.0 { // linear
+            h / w * x
+        } else {
+            let r = -curve_factor * 0.5 + 0.5; // -1.0..1.0 -> 1.0..0.0
+            h*((1.0/r-1.0).powf(2.0*x/w)-1.0)/((1.0/r-1.0).powf(2.0)-1.0)
         }
     }
 }
