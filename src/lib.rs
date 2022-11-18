@@ -80,7 +80,7 @@ impl ADSRParams {
 
         ADSRParams {
             attack_time   : ADSRParamKind::AttackTime(attack_time),
-            attack_curve  : ADSRParamKind::AttackCurve(attack_curve)
+            attack_curve  : ADSRParamKind::AttackCurve(attack_curve),
             decay_time    : ADSRParamKind::DecayTime(decay_time),
             decay_curve   : ADSRParamKind::DecayCurve(decay_curve),
             sustain_level : ADSRParamKind::SustainLevel(sustain_level),
@@ -104,14 +104,15 @@ impl ADSRParams {
                 self.release_time = ADSRParamKind::ReleaseTime(t);
             },
             ADSRParamKind::AttackCurve(c) if c >= -1.0 && c <= 1.0 => {
-                self.attack_time = ADSRParamKind::AttackCurve(c);
+                self.attack_curve = ADSRParamKind::AttackCurve(c);
             },
             ADSRParamKind::DecayCurve(c) if c >= -1.0 && c <= 1.0 => {
-                self.decay_time = ADSRParamKind::DecayCurve(t);
+                self.decay_curve = ADSRParamKind::DecayCurve(c);
             },
             ADSRParamKind::ReleaseCurve(c) if c >= -1.0 && c <= 1.0 => {
-                self.release_time = ADSRParamKind::ReleaseCurve(t);
+                self.release_curve = ADSRParamKind::ReleaseCurve(c);
             },
+            _ => (),
         }
     }
 }
@@ -201,7 +202,7 @@ impl ADSR {
                 let t = self.note_on_duration / self.sample_rate;
                 if t < self.params.attack_time.as_val() {
                     ADSRPhase::Attack
-                } else if self.params.attack_time.as_val() <= t && self.params.decay_time.as_val() > 0 {
+                } else if self.params.attack_time.as_val() <= t && t < self.params.decay_time.as_val() + self.params.attack_time.as_val() {
                     ADSRPhase::Decay
                 } else { // if self.a + self.d < t {
                     ADSRPhase::Sustain
@@ -223,21 +224,21 @@ impl ADSR {
             ADSRPhase::Attack => {
                 let t = self.note_on_duration / self.sample_rate;
                 if self.params.decay_time.as_val() > 0.0 {
-                    self.curve_function(t, 1.0, self.params.attack_time.as_val(), self.params.attack_curve.as_val())
+                    Self::curve_function(t, 1.0, self.params.attack_time.as_val(), self.params.attack_curve.as_val())
                 } else {
-                    self.curve_function(t, self.params.sustain_level.as_val(), self.params.attack_time.as_val(), self.params.attack_curve.as_val())
+                    Self::curve_function(t, self.params.sustain_level.as_val(), self.params.attack_time.as_val(), self.params.attack_curve.as_val())
                 }
             },
             ADSRPhase::Decay => {
                 let t = self.note_on_duration / self.sample_rate - self.params.attack_time.as_val();
-                self.curve_function(self.params.decay_time.as_val() - t, 1.0 - self.params.sustain_level.as_val(), self.params.decay_time.as_val(), self.params.decay_curve.as_val())
+                Self::curve_function(self.params.decay_time.as_val() - t, 1.0 - self.params.sustain_level.as_val(), self.params.decay_time.as_val(), self.params.decay_curve.as_val()) + self.params.sustain_level.as_val()
             },
             ADSRPhase::Sustain => {
                 self.params.sustain_level.as_val()
             },
             ADSRPhase::Release => {
                 let t = self.note_off_duration / self.sample_rate;
-                self.curve_function(self.params.release_time.as_val() - t, self.last_gate_val, self.params.release_time.as_val(), self.params.release_curve.as_val())
+                Self::curve_function(self.params.release_time.as_val() - t, self.last_gate_val, self.params.release_time.as_val(), self.params.release_curve.as_val())
             },
             ADSRPhase::Silence => {
                 0.0
@@ -254,7 +255,8 @@ impl ADSR {
         if curve_factor == 0.0 { // linear
             h / w * x
         } else {
-            let r = -curve_factor * 0.5 + 0.5; // -1.0..1.0 -> 1.0..0.0
+            const EPS: f32 = 0.005;
+            let r = -curve_factor * (0.5 - EPS) + (0.5 + EPS); // -1.0..1.0 -> 1.0-eps..0.0+eps
             h*((1.0/r-1.0).powf(2.0*x/w)-1.0)/((1.0/r-1.0).powf(2.0)-1.0)
         }
     }
@@ -345,6 +347,9 @@ mod tests {
         event_queue.push_front((0.0, NoteOn));
         event_queue.push_front((1.0, NoteOff));
         let mut adsr = ADSR::new(0.2, 0.2, 0.8, 1.0, 100.0);
+        adsr.set_adsr_param(ADSRParamKind::AttackCurve(-0.5));
+        adsr.set_adsr_param(ADSRParamKind::DecayCurve(0.4));
+        adsr.set_adsr_param(ADSRParamKind::ReleaseCurve(0.6));
         create_chart("chart/typical.png", "typical", &mut adsr, 2.0, &mut event_queue);
     }
 
