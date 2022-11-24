@@ -26,43 +26,15 @@ pub enum ADSRParamKind {
     ReleaseCurve(f32),
 }
 
-impl ADSRParamKind {
-    pub fn as_val(&self) -> f32 {
-        match self {
-            ADSRParamKind::AttackTime(val) => {
-                *val
-            },
-            ADSRParamKind::DecayTime(val) => {
-                *val
-            },
-            ADSRParamKind::SustainLevel(val) => {
-                *val
-            },
-            ADSRParamKind::ReleaseTime(val) => {
-                *val
-            },
-            ADSRParamKind::AttackCurve(val) => {
-                *val
-            },
-            ADSRParamKind::DecayCurve(val) => {
-                *val
-            },
-            ADSRParamKind::ReleaseCurve(val) => {
-                *val
-            },
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct ADSRParams {
-    attack_time   : ADSRParamKind,
-    decay_time    : ADSRParamKind,
-    sustain_level : ADSRParamKind,
-    release_time  : ADSRParamKind,
-    attack_curve  : ADSRParamKind,
-    decay_curve   : ADSRParamKind,
-    release_curve : ADSRParamKind,
+    attack_time   : f32,
+    decay_time    : f32,
+    sustain_level : f32,
+    release_time  : f32,
+    attack_curve  : f32,
+    decay_curve   : f32,
+    release_curve : f32,
 }
 
 impl ADSRParams {
@@ -79,38 +51,38 @@ impl ADSRParams {
         assert!(release_curve >= -1.0 && release_curve <= 1.0); 
 
         ADSRParams {
-            attack_time   : ADSRParamKind::AttackTime(attack_time),
-            attack_curve  : ADSRParamKind::AttackCurve(attack_curve),
-            decay_time    : ADSRParamKind::DecayTime(decay_time),
-            decay_curve   : ADSRParamKind::DecayCurve(decay_curve),
-            sustain_level : ADSRParamKind::SustainLevel(sustain_level),
-            release_time  : ADSRParamKind::ReleaseTime(release_time),
-            release_curve : ADSRParamKind::ReleaseCurve(release_curve),
+            attack_time,
+            attack_curve,
+            decay_time,
+            decay_curve,
+            sustain_level,
+            release_time,
+            release_curve,
         }
     }
 
     pub fn set_param(&mut self, kind: ADSRParamKind) {
         match kind {
             ADSRParamKind::AttackTime(t) if t >= 0.0 => {
-                self.attack_time = ADSRParamKind::AttackTime(t);
+                self.attack_time = t;
             },
             ADSRParamKind::DecayTime(t) if t >= 0.0 => {
-                self.decay_time = ADSRParamKind::DecayTime(t);
+                self.decay_time = t;
             },
             ADSRParamKind::SustainLevel(l) if l >= 0.0 && l <= 1.0 => {
-                self.sustain_level = ADSRParamKind::SustainLevel(l);
+                self.sustain_level = l;
             },
             ADSRParamKind::ReleaseTime(t) if t >= 0.0 => {
-                self.release_time = ADSRParamKind::ReleaseTime(t);
+                self.release_time = t;
             },
             ADSRParamKind::AttackCurve(c) if c >= -1.0 && c <= 1.0 => {
-                self.attack_curve = ADSRParamKind::AttackCurve(c);
+                self.attack_curve = c;
             },
             ADSRParamKind::DecayCurve(c) if c >= -1.0 && c <= 1.0 => {
-                self.decay_curve = ADSRParamKind::DecayCurve(c);
+                self.decay_curve = c;
             },
             ADSRParamKind::ReleaseCurve(c) if c >= -1.0 && c <= 1.0 => {
-                self.release_curve = ADSRParamKind::ReleaseCurve(c);
+                self.release_curve = c;
             },
             _ => (),
         }
@@ -200,9 +172,9 @@ impl ADSR {
         match next_event {
             ADSREvent::NoteOn => {
                 let t = self.note_on_duration / self.sample_rate;
-                if t < self.params.attack_time.as_val() {
+                if t < self.params.attack_time {
                     ADSRPhase::Attack
-                } else if self.params.attack_time.as_val() <= t && t < self.params.decay_time.as_val() + self.params.attack_time.as_val() {
+                } else if self.params.attack_time <= t && t < self.params.decay_time + self.params.attack_time {
                     ADSRPhase::Decay
                 } else { // if self.a + self.d < t {
                     ADSRPhase::Sustain
@@ -210,7 +182,7 @@ impl ADSR {
             },
             ADSREvent::NoteOff => {
                 let t = self.note_off_duration / self.sample_rate;
-                if t < self.params.release_time.as_val() {
+                if t < self.params.release_time {
                     ADSRPhase::Release
                 } else {
                     ADSRPhase::Silence
@@ -223,22 +195,22 @@ impl ADSR {
         match next_phase {
             ADSRPhase::Attack => {
                 let t = self.note_on_duration / self.sample_rate;
-                if self.params.decay_time.as_val() > 0.0 {
-                    Self::curve_function(t, 1.0, self.params.attack_time.as_val(), self.params.attack_curve.as_val())
+                if self.params.decay_time > 0.0 {
+                    Self::curve_function(t, 1.0, self.params.attack_time, self.params.attack_curve)
                 } else {
-                    Self::curve_function(t, self.params.sustain_level.as_val(), self.params.attack_time.as_val(), self.params.attack_curve.as_val())
+                    Self::curve_function(t, self.params.sustain_level, self.params.attack_time, self.params.attack_curve)
                 }
             },
             ADSRPhase::Decay => {
-                let t = self.note_on_duration / self.sample_rate - self.params.attack_time.as_val();
-                Self::curve_function(self.params.decay_time.as_val() - t, 1.0 - self.params.sustain_level.as_val(), self.params.decay_time.as_val(), self.params.decay_curve.as_val()) + self.params.sustain_level.as_val()
+                let t = self.note_on_duration / self.sample_rate - self.params.attack_time;
+                Self::curve_function(self.params.decay_time - t, 1.0 - self.params.sustain_level, self.params.decay_time, self.params.decay_curve) + self.params.sustain_level
             },
             ADSRPhase::Sustain => {
-                self.params.sustain_level.as_val()
+                self.params.sustain_level
             },
             ADSRPhase::Release => {
                 let t = self.note_off_duration / self.sample_rate;
-                Self::curve_function(self.params.release_time.as_val() - t, self.last_gate_val, self.params.release_time.as_val(), self.params.release_curve.as_val())
+                Self::curve_function(self.params.release_time - t, self.last_gate_val, self.params.release_time, self.params.release_curve)
             },
             ADSRPhase::Silence => {
                 0.0
@@ -360,5 +332,17 @@ mod tests {
         event_queue.push_front((1.5, NoteOff));
         let mut adsr = ADSR::new(0.5, 0.0, 0.8, 0.5, 100.0);
         create_chart("chart/fade_in_out.png", "fade_in_out", &mut adsr, 2.0, &mut event_queue);
+    }
+
+    #[test]
+    fn curvature_edge_case() {
+        let mut event_queue = VecDeque::new();
+        event_queue.push_front((0.0, NoteOn));
+        event_queue.push_front((1.5, NoteOff));
+        let mut adsr = ADSR::new(0.5, 0.5, 0.5, 0.5, 100.0);
+        adsr.set_adsr_param(ADSRParamKind::AttackCurve(-1.0));
+        adsr.set_adsr_param(ADSRParamKind::DecayCurve(0.0));
+        adsr.set_adsr_param(ADSRParamKind::ReleaseCurve(1.0));
+        create_chart("chart/curvature_edge_case.png", "curvature_edge_case", &mut adsr, 2.0, &mut event_queue);
     }
 }
