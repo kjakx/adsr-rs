@@ -228,7 +228,7 @@ impl ADSR {
             h / w * x
         } else {
             const EPS: f32 = 0.005;
-            let r = -curve_factor * (0.5 - EPS) + (0.5 + EPS); // -1.0..1.0 -> 1.0-eps..0.0+eps
+            let r = -curve_factor * (0.5 - EPS) + 0.5; // -1.0..1.0 -> 1.0-eps..0.0+eps
             h*((1.0/r-1.0).powf(2.0*x/w)-1.0)/((1.0/r-1.0).powf(2.0)-1.0)
         }
     }
