@@ -90,29 +90,29 @@ impl ADSRParams {
     }
 
     pub fn set_param(&mut self, param: ADSRParamKind) {
+        assert!(param.is_valid());
         match param {
-            ADSRParamKind::AttackTime(t) if param.is_valid() => {
+            ADSRParamKind::AttackTime(t) => {
                 self.attack_time = t;
             },
-            ADSRParamKind::DecayTime(t) if param.is_valid() => {
+            ADSRParamKind::DecayTime(t) => {
                 self.decay_time = t;
             },
-            ADSRParamKind::SustainLevel(l) if param.is_valid() => {
+            ADSRParamKind::SustainLevel(l) => {
                 self.sustain_level = l;
             },
-            ADSRParamKind::ReleaseTime(t) if param.is_valid() => {
+            ADSRParamKind::ReleaseTime(t) => {
                 self.release_time = t;
             },
-            ADSRParamKind::AttackCurve(c) if param.is_valid() => {
+            ADSRParamKind::AttackCurve(c) => {
                 self.attack_curve = c;
             },
-            ADSRParamKind::DecayCurve(c) if param.is_valid() => {
+            ADSRParamKind::DecayCurve(c) => {
                 self.decay_curve = c;
             },
-            ADSRParamKind::ReleaseCurve(c) if param.is_valid() => {
+            ADSRParamKind::ReleaseCurve(c) => {
                 self.release_curve = c;
-            },
-            _ => (),
+            }
         }
     }
 }
@@ -144,7 +144,7 @@ impl ADSR {
         }
     }
 
-    pub fn set_adsr_param(&mut self, param: ADSRParamKind) {
+    pub fn set_param(&mut self, param: ADSRParamKind) {
         self.params.set_param(param);
     }
 
@@ -275,6 +275,7 @@ mod tests {
     use super::*;
     use plotters::prelude::*;
     use ADSREvent::*;
+    use ADSRParamKind::*;
     use std::collections::VecDeque;
 
     fn create_chart(filename: &str, cap: &str, adsr: &mut ADSR, t_sec: f32, events: &mut VecDeque<(f32, ADSREvent)>) {
@@ -283,7 +284,7 @@ mod tests {
             if !events.is_empty() && events[events.len() - 1].0 <= i as f32 / adsr.sample_rate {
                 let e = events.pop_back().unwrap();
                 adsr.set_next_event(e.1);
-            };
+            }
             adsr.next()
         }).collect();
 
@@ -347,9 +348,9 @@ mod tests {
         event_queue.push_front((0.0, NoteOn));
         event_queue.push_front((1.0, NoteOff));
         let mut adsr = ADSR::new(0.2, 0.2, 0.8, 1.0, 100.0);
-        adsr.set_adsr_param(ADSRParamKind::AttackCurve(-0.5));
-        adsr.set_adsr_param(ADSRParamKind::DecayCurve(0.4));
-        adsr.set_adsr_param(ADSRParamKind::ReleaseCurve(0.6));
+        adsr.set_param(AttackCurve(-0.5));
+        adsr.set_param(DecayCurve(0.4));
+        adsr.set_param(ReleaseCurve(0.6));
         create_chart("chart/typical.png", "typical", &mut adsr, 2.0, &mut event_queue);
     }
 
@@ -368,9 +369,9 @@ mod tests {
         event_queue.push_front((0.0, NoteOn));
         event_queue.push_front((1.5, NoteOff));
         let mut adsr = ADSR::new(0.5, 0.5, 0.5, 0.5, 100.0);
-        adsr.set_adsr_param(ADSRParamKind::AttackCurve(-1.0));
-        adsr.set_adsr_param(ADSRParamKind::DecayCurve(0.0));
-        adsr.set_adsr_param(ADSRParamKind::ReleaseCurve(1.0));
+        adsr.set_param(AttackCurve(-1.0));
+        adsr.set_param(DecayCurve(0.0));
+        adsr.set_param(ReleaseCurve(1.0));
         create_chart("chart/curvature_edge_case.png", "curvature_edge_case", &mut adsr, 2.0, &mut event_queue);
     }
 }
