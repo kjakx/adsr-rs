@@ -26,6 +26,34 @@ pub enum ADSRParamKind {
     ReleaseCurve(f32),
 }
 
+impl ADSRParamKind {
+    pub fn is_valid(self) -> bool {
+        match self {
+            ADSRParamKind::AttackTime(t) => {
+                t >= 0.0
+            },
+            ADSRParamKind::DecayTime(t) => {
+                t >= 0.0
+            },
+            ADSRParamKind::SustainLevel(l) => {
+                l >= 0.0 && l <= 1.0
+            },
+            ADSRParamKind::ReleaseTime(t) => {
+                t >= 0.0
+            },
+            ADSRParamKind::AttackCurve(c) => {
+                c >= -1.0 && c <= 1.0
+            },
+            ADSRParamKind::DecayCurve(c) => {
+                c >= -1.0 && c <= 1.0
+            },
+            ADSRParamKind::ReleaseCurve(c) => {
+                c >= -1.0 && c <= 1.0
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ADSRParams {
     attack_time   : f32,
@@ -42,13 +70,13 @@ impl ADSRParams {
         attack_time: f32, decay_time: f32, sustain_level: f32, release_time: f32,
         attack_curve: f32, decay_curve: f32, release_curve: f32
     ) -> Self {
-        assert!(attack_time >= 0.0);
-        assert!(decay_time >= 0.0);
-        assert!(sustain_level >= 0.0 && sustain_level <= 1.0);
-        assert!(release_time >= 0.0);
-        assert!(attack_curve >= -1.0 && attack_curve <= 1.0);
-        assert!(decay_curve >= -1.0 && decay_curve <= 1.0); 
-        assert!(release_curve >= -1.0 && release_curve <= 1.0); 
+        assert!(ADSRParamKind::AttackTime(attack_time).is_valid());
+        assert!(ADSRParamKind::DecayTime(decay_time).is_valid());
+        assert!(ADSRParamKind::SustainLevel(sustain_level).is_valid());
+        assert!(ADSRParamKind::ReleaseTime(release_time).is_valid());
+        assert!(ADSRParamKind::AttackCurve(attack_curve).is_valid());
+        assert!(ADSRParamKind::DecayCurve(decay_curve).is_valid()); 
+        assert!(ADSRParamKind::ReleaseCurve(release_curve).is_valid()); 
 
         ADSRParams {
             attack_time,
@@ -61,27 +89,27 @@ impl ADSRParams {
         }
     }
 
-    pub fn set_param(&mut self, kind: ADSRParamKind) {
-        match kind {
-            ADSRParamKind::AttackTime(t) if t >= 0.0 => {
+    pub fn set_param(&mut self, param: ADSRParamKind) {
+        match param {
+            ADSRParamKind::AttackTime(t) if param.is_valid() => {
                 self.attack_time = t;
             },
-            ADSRParamKind::DecayTime(t) if t >= 0.0 => {
+            ADSRParamKind::DecayTime(t) if param.is_valid() => {
                 self.decay_time = t;
             },
-            ADSRParamKind::SustainLevel(l) if l >= 0.0 && l <= 1.0 => {
+            ADSRParamKind::SustainLevel(l) if param.is_valid() => {
                 self.sustain_level = l;
             },
-            ADSRParamKind::ReleaseTime(t) if t >= 0.0 => {
+            ADSRParamKind::ReleaseTime(t) if param.is_valid() => {
                 self.release_time = t;
             },
-            ADSRParamKind::AttackCurve(c) if c >= -1.0 && c <= 1.0 => {
+            ADSRParamKind::AttackCurve(c) if param.is_valid() => {
                 self.attack_curve = c;
             },
-            ADSRParamKind::DecayCurve(c) if c >= -1.0 && c <= 1.0 => {
+            ADSRParamKind::DecayCurve(c) if param.is_valid() => {
                 self.decay_curve = c;
             },
-            ADSRParamKind::ReleaseCurve(c) if c >= -1.0 && c <= 1.0 => {
+            ADSRParamKind::ReleaseCurve(c) if param.is_valid() => {
                 self.release_curve = c;
             },
             _ => (),
@@ -116,8 +144,8 @@ impl ADSR {
         }
     }
 
-    pub fn set_adsr_param(&mut self, kind: ADSRParamKind) {
-        self.params.set_param(kind);
+    pub fn set_adsr_param(&mut self, param: ADSRParamKind) {
+        self.params.set_param(param);
     }
 
     pub fn set_next_event(&mut self, event: ADSREvent) {
