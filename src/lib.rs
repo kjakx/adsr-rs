@@ -202,9 +202,9 @@ impl ADSR {
                 let t = self.note_on_duration / self.sample_rate;
                 if t < self.params.attack_time {
                     ADSRPhase::Attack
-                } else if self.params.attack_time <= t && t < self.params.decay_time + self.params.attack_time {
+                } else if t < self.params.decay_time + self.params.attack_time {
                     ADSRPhase::Decay
-                } else { // if self.a + self.d < t {
+                } else { // if attack_time + decay_time <= t {
                     ADSRPhase::Sustain
                 }
             },
